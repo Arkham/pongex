@@ -6,7 +6,7 @@ use Mix.Config
 config :pongex, :viewport, %{
   name: :main_viewport,
   size: {700, 600},
-  default_scene: {Pongex.Scene.Home, nil},
+  default_scene: {Pongex.Scene.Game, nil},
   drivers: [
     %{
       module: Scenic.Driver.Glfw,
