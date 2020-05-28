@@ -1,4 +1,3 @@
-Readme text goes here
+# Pongex
 
-
-From template
+A Pong clone written in Elixir and Scenic.
