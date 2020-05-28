@@ -8,12 +8,14 @@ defmodule Pongex.Scene.Game do
     only: [{:rect, 3}, {:path, 3}, {:group, 3}, {:update_opts, 2}]
 
   @font Pongex.Font.font()
+
   @tile_size 8
   @ball_size @tile_size
   @vertical_padding @tile_size
   @horizontal_padding @tile_size * 8
   @paddle_width @tile_size
   @paddle_height @tile_size * 5
+
   @animate_ms trunc(1000 / 60)
   @animate_paddle_ms trunc(1000 / 120)
   @vel_factor 5
@@ -84,7 +86,7 @@ defmodule Pongex.Scene.Game do
       vp_center: vp_center,
       graph: graph,
       game_state: :waiting,
-      key_pressed: %{},
+      pressed_keys: %{},
       score: {0, 0},
       vel: {1, 1},
       vel_factor: @vel_factor
@@ -102,8 +104,7 @@ defmodule Pongex.Scene.Game do
     {x, y} = Graph.get!(state.graph, :ball).transforms.translate
     {vel_x, vel_y} = state.vel
 
-    {new_x, new_y} =
-      {x + state.vel_factor * vel_x, y + state.vel_factor * vel_y}
+    {new_x, new_y} = {x + @vel_factor * vel_x, y + @vel_factor * vel_y}
 
     {new_score, new_state} =
       if new_x + @ball_size < 0 do
@@ -168,7 +169,7 @@ defmodule Pongex.Scene.Game do
   def handle_info(:animate_paddle, state) do
     new_graph = move_paddles(state)
 
-    {:noreply, %{state | graph: new_graph, key_pressed: %{}}, push: new_graph}
+    {:noreply, %{state | graph: new_graph, pressed_keys: %{}}, push: new_graph}
   end
 
   def handle_info(:new_ball, state) do
@@ -187,34 +188,19 @@ defmodule Pongex.Scene.Game do
      }, push: new_graph}
   end
 
-  def handle_input({:key, {"W", _, _}}, _context, state) do
-    new_key_pressed = Map.put(state.key_pressed, "W", true)
-    {:noreply, %{state | key_pressed: new_key_pressed}}
+  def handle_input({:key, {key, :press, _}}, _context, state)
+      when key in ["W", "S", "I", "K"] do
+    new_pressed_keys = Map.put(state.pressed_keys, key, true)
+    {:noreply, %{state | pressed_keys: new_pressed_keys}}
   end
 
-  def handle_input({:key, {"S", _, _}}, _context, state) do
-    new_key_pressed = Map.put(state.key_pressed, "S", true)
-    {:noreply, %{state | key_pressed: new_key_pressed}}
-  end
-
-  def handle_input({:key, {"I", _, _}}, _context, state) do
-    new_key_pressed = Map.put(state.key_pressed, "I", true)
-    {:noreply, %{state | key_pressed: new_key_pressed}}
-  end
-
-  def handle_input({:key, {"K", _, _}}, _context, state) do
-    new_key_pressed = Map.put(state.key_pressed, "K", true)
-    {:noreply, %{state | key_pressed: new_key_pressed}}
-  end
-
-  def handle_input(event, _context, state) do
-    Logger.info("Received event: #{inspect(event)}")
+  def handle_input(_event, _context, state) do
     {:noreply, state}
   end
 
-  def move_paddle_up(graph, vel, paddle) do
+  def move_paddle_up(graph, paddle) do
     {x, y} = Graph.get!(graph, paddle).transforms.translate
-    new_y = max(y - vel, 0)
+    new_y = max(y - @vel_factor * @paddle_vel_factor, 0)
 
     graph
     |> Graph.modify(
@@ -223,9 +209,11 @@ defmodule Pongex.Scene.Game do
     )
   end
 
-  def move_paddle_down(graph, vel, vp_height, paddle) do
+  def move_paddle_down(graph, vp_height, paddle) do
     {x, y} = Graph.get!(graph, paddle).transforms.translate
-    new_y = min(y + vel, vp_height - @paddle_height)
+
+    new_y =
+      min(y + @vel_factor * @paddle_vel_factor, vp_height - @paddle_height)
 
     graph
     |> Graph.modify(
@@ -235,38 +223,19 @@ defmodule Pongex.Scene.Game do
   end
 
   def move_paddles(state) do
-    result = state.graph
-    vel = state.vel_factor * @paddle_vel_factor
-
-    result =
-      if Map.has_key?(state.key_pressed, "W") do
-        move_paddle_up(result, vel, :left_paddle)
+    [
+      {"W", fn acc -> move_paddle_up(acc, :left_paddle) end},
+      {"S", fn acc -> move_paddle_down(acc, state.vp_height, :left_paddle) end},
+      {"I", fn acc -> move_paddle_up(acc, :right_paddle) end},
+      {"K", fn acc -> move_paddle_down(acc, state.vp_height, :right_paddle) end}
+    ]
+    |> Enum.reduce(state.graph, fn {key, fun}, acc ->
+      if Map.has_key?(state.pressed_keys, key) do
+        fun.(acc)
       else
-        result
+        acc
       end
-
-    result =
-      if Map.has_key?(state.key_pressed, "S") do
-        move_paddle_down(result, vel, state.vp_height, :left_paddle)
-      else
-        result
-      end
-
-    result =
-      if Map.has_key?(state.key_pressed, "I") do
-        move_paddle_up(result, vel, :right_paddle)
-      else
-        result
-      end
-
-    result =
-      if Map.has_key?(state.key_pressed, "K") do
-        move_paddle_down(result, vel, state.vp_height, :right_paddle)
-      else
-        result
-      end
-
-    result
+    end)
   end
 
   def is_colliding(graph, paddle) do
